@@ -35,6 +35,23 @@ When you are finished with the VMs, you can just run cleanup.sh in the
 scenario directory to clean everything up.
 
 ## Setups
+### rdo-ad-setup
+
+This scenario sets up Active Directory on one VM and RDO on a second.
+Deployment details include:
+
+  - Keystone depolyed in eventlet (keystone-all)
+  - Active Directory set up as LDAP identity backend
+  - Service users created in Active Directory (no Keystone domains)
+
+The Windows 2008 Server evaluation image will be automatically downloaded
+from Microsoft the first time that this scenario is set up, which will take
+some time to complete. On subsequent runs, a converted qcow2 image will be
+reused without requiring another download process.
+
+A v3 keystonerc file is created in addition to the standard keystonerc
+files that are created by packstack.
+
 ### rdo-kerberos-setup
 
 This scenario sets up FreeIPA on one VM and RDO on a second. Deployment
