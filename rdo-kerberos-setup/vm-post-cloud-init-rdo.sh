@@ -156,7 +156,6 @@ user=uid=keystone,cn=users,cn=accounts,$suffix
 password=$RDO_PASSWORD
 suffix=$suffix
 user_tree_dn=cn=users,cn=accounts,$suffix
-group_tree_dn=cn=groups,cn=accounts,$suffix
 user_objectclass=person
 user_id_attribute=uid
 user_name_attribute=uid
