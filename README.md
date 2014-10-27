@@ -10,6 +10,10 @@ installation and configuration of RDO, and installation and configuration
 of other software that is needed for the particular scenario (such as
 Active Directory or FreeIPA).
 
+These scripts have been tested on Fedora 20 and RHEL 7. The scripts will
+attempt to set up your environment for you the first time they are run,
+which includes cloning required git repos and installing required packages.
+
 Global configuration is defined in global.conf. This mainly consists
 of virtual network settings that will be used by the VMs that are
 created by the individual scenarios.
@@ -23,9 +27,12 @@ scripts, which are prefixed with 'vm-post-cloud-init-'.
 
 To deploy a particular scenario, you should just be able to run 'setup.sh'
 in the scenario directory that you want to deploy. This needs to be run
-as a user with passwordless sudo abilities. Once a VM is iniitally created,
-you can ssh into it and follow the progress by tailing the following log
-files:
+as a user with passwordless sudo abilities. The first time a particular
+scenario is run, the OS images used to install the VMs will be downloaded.
+The downloaded images will be reused on subsequent runs.
+
+Once a VM is initially created, you can ssh into it and follow the progress
+by tailing the following log files:
 
   - /var/log/cloud-init.log - initial VM creation and package installtion
 
