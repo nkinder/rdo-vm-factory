@@ -51,11 +51,6 @@ sed -i "s/CONFIG_\(.*\)_PW=.*/CONFIG_\1_PW=$RDO_PASSWORD/g" /root/answerfile.txt
 # NGK(TODO) This is a tempory workaround until LP#1382160 is addressed.
 sed -i 's/CONFIG_KEYSTONE_TOKEN_FORMAT=PKI/CONFIG_KEYSTONE_TOKEN_FORMAT=UUID/g' /root/answerfile.txt
 
-# Patch packstack to support deplyment of Keystone in httpd
-patch -p1 -d /usr/lib/python2.7/site-packages < /mnt/0001-support-other-components-using-apache-mod_wsgi.patch
-mv /usr/lib/python2.7/site-packages/packstack/puppet/modules/packstack/manifests/apache_common.pp \
-    /usr/share/openstack-puppet/modules/packstack/manifests
-
 # Configure Keystone to be deployed in httpd
 echo 'CONFIG_KEYSTONE_SERVICE_NAME=httpd' >> /root/answerfile.txt
 
@@ -290,7 +285,6 @@ openstack --os-identity-api-version 3 \
 pushd /opt
 git clone git://git.openstack.org/openstack/python-keystoneclient-kerberos
 pushd /opt/python-keystoneclient-kerberos
-git pull https://review.openstack.org/openstack/python-keystoneclient-kerberos refs/changes/14/123614/14
 python setup.py install
 popd
 popd
