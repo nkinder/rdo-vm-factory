@@ -47,12 +47,7 @@ cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys
 HOME=/root packstack --gen-answer-file=/root/answerfile.txt
 sed -i 's/CONFIG_NEUTRON_INSTALL=y/CONFIG_NEUTRON_INSTALL=n/g' /root/answerfile.txt
 sed -i "s/CONFIG_\(.*\)_PW=.*/CONFIG_\1_PW=$RDO_PASSWORD/g" /root/answerfile.txt
-
-# NGK(TODO) This is a tempory workaround until LP#1382160 is addressed.
-sed -i 's/CONFIG_KEYSTONE_TOKEN_FORMAT=PKI/CONFIG_KEYSTONE_TOKEN_FORMAT=UUID/g' /root/answerfile.txt
-
-# Configure Keystone to be deployed in httpd
-echo 'CONFIG_KEYSTONE_SERVICE_NAME=httpd' >> /root/answerfile.txt
+sed -i 's/CONFIG_KEYSTONE_SERVICE_NAME=keystone/CONFIG_KEYSTONE_SERVICE_NAME=httpd/g' /root/answerfile.txt
 
 # Install RDO
 HOME=/root packstack --debug --answer-file=/root/answerfile.txt
