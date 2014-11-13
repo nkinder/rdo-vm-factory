@@ -59,6 +59,46 @@ reused without requiring another download process.
 A v3 keystonerc file is created in addition to the standard keystonerc
 files that are created by packstack.
 
+### rdo-federation-setup
+
+This scenario sets up FreeIPA and Ipsilon on one VM and RDO on a second.
+Deployment details include:
+
+  - Keystone running in httpd
+  - SQL identity backend
+  - OS-FEDERATION extension configured for SAML authentication
+  - Ipsilon configured for Kerberos authentication
+
+There are a few manual steps that need to be completed before SAML
+authentication to Keystone will work.  Ipsilon doesn't currently have a
+way for us to set up Keystone as a SP in an automated way.  The following
+steps are needed to complete the registration in Ipsilon:
+
+  - The SP metadata for Keystone needs to be copied from the RDO vm to the
+    Ipsilon VM.  This can be copied over by running:
+
+    scp /etc/http/mellon/http_rdo.rdodom.test_keystone.xml ipauser@ipa.rdodom.test:~
+
+  - Connect to the Ipsilon VM using 'ssh -X' to allow a browser to be used.
+  - Obtain a Kerberos ticket for the admin user with 'kinit admin'.
+  - Run firefox and configure it for IPA by connecting to ipa.rdodom.test
+    and run through the setup wizard.
+  - Connect to https://ipa.rdodom.test/idp with the browser, login as the
+    admin user via Kerberos, then add the SP by navigating to:
+
+    Identity Providers->saml2->Manage->Add New
+
+  - Name the Service Provider, select the metadata xml that was copied
+    over via the browse dialog, then click 'Save'.
+
+At this point, the SP is registered.  You can attempt to obtain a Keystone
+token via SAML federation by going to the following URL in the browser:
+
+    http://rdo.rdodom.test:5000/v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2/auth
+
+The token body should be displayed if you have a valid Kerberos ticket that
+is used to authenticate to the Ipsilon IdP.
+
 ### rdo-kerberos-setup
 
 This scenario sets up FreeIPA on one VM and RDO on a second. Deployment
