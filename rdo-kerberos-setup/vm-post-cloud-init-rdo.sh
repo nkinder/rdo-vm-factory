@@ -165,6 +165,7 @@ group_allow_delete=false
 user_enabled_attribute=nsAccountLock
 user_enabled_default=False
 user_enabled_invert=true
+tls_cacertfile=/etc/ipa/ca.crt
 
 [identity]
 driver = keystone.identity.backends.ldap.Identity
