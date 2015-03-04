@@ -45,6 +45,7 @@ cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys
 
 # Set up our answerfile
 HOME=/root packstack --gen-answer-file=/root/answerfile.txt
+sed -i 's/CONFIG_HEAT_INSTALL=n/CONFIG_HEAT_INSTALL=y/g' /root/answerfile.txt
 sed -i 's/CONFIG_NEUTRON_INSTALL=y/CONFIG_NEUTRON_INSTALL=n/g' /root/answerfile.txt
 sed -i "s/CONFIG_\(.*\)_PW=.*/CONFIG_\1_PW=$RDO_PASSWORD/g" /root/answerfile.txt
 sed -i 's/CONFIG_KEYSTONE_SERVICE_NAME=keystone/CONFIG_KEYSTONE_SERVICE_NAME=httpd/g' /root/answerfile.txt
@@ -265,11 +266,69 @@ systemctl restart httpd.service
 sed -i "s/^auth_version\(.*\)/#auth_version\1/g" /usr/share/nova/nova-dist.conf
 openstack-service restart
 
+# Set our demo user up for Heat
+openstack --os-identity-api-version 3 \
+          --os-auth-url http://$VM_FQDN:35357/v3 \
+          --os-username admin \
+          --os-password $RDO_PASSWORD \
+          --os-user-domain-name $IPA_REALM \
+          --os-project-domain-name $IPA_REALM \
+          --os-domain-name $IPA_REALM \
+          role add --project $demo_project_id --user $demo_user_id heat_stack_owner
+
+# Add a Cirros image for testing purposes
+openstack --os-identity-api-version 3 \
+          --os-auth-url http://$VM_FQDN:35357/v3 \
+          --os-username cloud_admin \
+          --os-password $RDO_PASSWORD \
+          --os-user-domain-name admin_domain \
+          --os-domain-name admin_domain \
+          image create --disk-format qcow2 --container-format bare --public \
+          --copy-from http://download.cirros-cloud.net/0.3.3/cirros-0.3.3-x86_64-disk.img cirros-0.3.3-x86_64
+
+# Create a simple Heat template for testing purposes
+cat > /home/$VM_USER_ID/test-template.yaml << EOF
+heat_template_version: 2013-05-23
+
+description: Test Template
+
+parameters:
+  ImageID:
+    type: string
+    description: Image use to boot a server
+
+resources:
+  server1:
+    type: OS::Nova::Server
+    properties:
+      name: "Test server"
+      image: { get_param: ImageID }
+      flavor: "m1.tiny"
+
+outputs:
+  server1_private_ip:
+    description: IP address of the server in the private network
+    value: { get_attr: [ server1, first_address ] }
+EOF
+
+chown $VM_USER_ID:$VM_USER_ID /home/$VM_USER_ID/test-template.yaml
+
+# Create a test stack as the demo user
+heat --os-auth-url http://$VM_FQDN:35357/v3 \
+     --os-username demo \
+     --os-password $RDO_PASSWORD \
+     --os-user-domain-name $IPA_REALM \
+     --os-project-domain-name $IPA_REALM \
+     --os-project-name demo \
+     stack-create -f /home/$VM_USER_ID/test-template.yaml \
+     -P "ImageID=cirros-0.3.3-x86_64" test-stack
+
 # Add rc files for cloud admin and IPA domain admin
 cat > /home/$VM_USER_ID/keystonerc_cloud_admin << EOF
 export OS_USERNAME=cloud_admin
 export OS_PASSWORD=$RDO_PASSWORD
 export OS_DOMAIN_NAME=admin_domain
+export OS_PROJECT_NAME=
 export OS_USER_DOMAIN_NAME=admin_domain
 export OS_PROJECT_DOMAIN_NAME=admin_domain
 export OS_AUTH_URL=http://$VM_FQDN:5000/v3/
@@ -282,12 +341,26 @@ cat > /home/$VM_USER_ID/keystonerc_ipa_admin << EOF
 export OS_USERNAME=admin
 export OS_PASSWORD=$RDO_PASSWORD
 export OS_DOMAIN_NAME=$IPA_REALM
+export OS_PROJECT_NAME=
 export OS_USER_DOMAIN_NAME=$IPA_REALM
 export OS_PROJECT_DOMAIN_NAME=$IPA_REALM
 export OS_AUTH_URL=http://$VM_FQDN:5000/v3/
 export OS_IDENTITY_API_VERSION=3
 export OS_AUTH_TYPE=
 export PS1='[\u@\h \W(keystone_ipa_admin)]\$ '
+EOF
+
+cat > /home/$VM_USER_ID/keystonerc_demo << EOF
+export OS_USERNAME=demo
+export OS_PASSWORD=$RDO_PASSWORD
+export OS_DOMAIN_NAME=
+export OS_PROJECT_NAME=demo
+export OS_USER_DOMAIN_NAME=$IPA_REALM
+export OS_PROJECT_DOMAIN_NAME=$IPA_REALM
+export OS_AUTH_URL=http://$VM_FQDN:5000/v3/
+export OS_IDENTITY_API_VERSION=3
+export OS_AUTH_TYPE=
+export PS1='[\u@\h \W(keystone_demo)]\$ '
 EOF
 
 chown $VM_USER_ID:$VM_USER_ID /home/$VM_USER_ID/keystonerc_*
