@@ -236,7 +236,7 @@ cat >> /etc/openstack-dashboard/local_settings << EOF
 OPENSTACK_API_VERSIONS = {
      "identity": 3
 }
-OPENSTACK_KEYSTONE_DEFAULT_DOMAIN = 'RDODOM.TEST'
+OPENSTACK_KEYSTONE_DEFAULT_DOMAIN = '$IPA_REALM'
 EOF
 
 sed -i "s/^OPENSTACK_KEYSTONE_URL = .*/OPENSTACK_KEYSTONE_URL = \"http:\/\/$VM_FQDN:5000\/v3\"/g" \
