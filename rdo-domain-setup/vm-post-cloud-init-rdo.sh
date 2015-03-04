@@ -258,6 +258,12 @@ cp /etc/keystone/policy.v3cloudsample.json /etc/openstack-dashboard/keystone_pol
 # Restart Horizon
 systemctl restart httpd.service
 
+# NGK(TODO) - this is a workaround for LP#1427878
+# Update Nova to allow it to validate tokens using the
+# v3 Identity API.
+sed -i "s/^auth_version\(.*\)/#auth_version\1/g" /usr/share/nova/nova-dist.conf
+openstack-service restart
+
 # Add rc files for cloud admin and IPA domain admin
 cat > /home/$VM_USER_ID/keystonerc_cloud_admin << EOF
 export OS_USERNAME=cloud_admin
