@@ -107,8 +107,7 @@ get_ad_ca_cert() {
 setenforce 0
 
 # RDO requires EPEL
-yum install -y http://download.fedoraproject.org/pub/epel/7/x86_64/e/epel-release-7-2.noarch.rpm
-yum-config-manager --enable epel
+yum install -y epel-release
 
 # Set up the rdo-release repo
 yum install -y https://rdo.fedorapeople.org/openstack-juno/rdo-release-juno.rpm

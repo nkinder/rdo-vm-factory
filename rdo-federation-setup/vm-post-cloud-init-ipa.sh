@@ -17,8 +17,7 @@ ipa-server-install -r $IPA_REALM -n $VM_DOMAIN -p "$IPA_PASSWORD" -a "$IPA_PASSW
     -N --hostname=$VM_FQDN --setup-dns --forwarder=$IPA_FWDR -U
 
 # Enable EPEL (for Ipsilon deps)
-yum install -y http://download.fedoraproject.org/pub/epel/7/x86_64/e/epel-release-7-2.noarch.rpm
-yum-config-manager --enable epel
+yum install -y epel-release
 
 # Set up Copr repos for Ipsilon and it's dependencies
 wget -O /etc/yum.repos.d/xmlsec1.repo \
