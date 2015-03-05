@@ -264,17 +264,16 @@ systemctl restart httpd.service
 # Update Nova to allow it to validate tokens using the
 # v3 Identity API.
 sed -i "s/^auth_version\(.*\)/#auth_version\1/g" /usr/share/nova/nova-dist.conf
-openstack-service restart
 
-# Set our demo user up for Heat
-openstack --os-identity-api-version 3 \
-          --os-auth-url http://$VM_FQDN:35357/v3 \
-          --os-username admin \
-          --os-password $RDO_PASSWORD \
-          --os-user-domain-name $IPA_REALM \
-          --os-project-domain-name $IPA_REALM \
-          --os-domain-name $IPA_REALM \
-          role add --project $demo_project_id --user $demo_user_id heat_stack_owner
+# NGK(TODO) - this is a workaround for LP#1428376
+# Update Swift to use the proper keystonemiddleware module.  Without
+# this, multi-domain support in Swift doesn't work properly.
+sed -i "s/^paste.filter_factory.*/paste.filter_factory = keystonemiddleware.auth_token:filter_factory/g" \
+    /etc/swift/proxy-server.conf
+
+# NGK(TODO) Restart to allow the above Heat and Swift workarounds to
+# take effect.  Remove this once the above bugs are fixed.
+openstack-service restart
 
 # Add a Cirros image for testing purposes
 openstack --os-identity-api-version 3 \
@@ -285,6 +284,26 @@ openstack --os-identity-api-version 3 \
           --os-domain-name admin_domain \
           image create --disk-format qcow2 --container-format bare --public \
           --copy-from http://download.cirros-cloud.net/0.3.3/cirros-0.3.3-x86_64-disk.img cirros-0.3.3-x86_64
+
+# Set our demo user up for Swift
+openstack --os-identity-api-version 3 \
+          --os-auth-url http://$VM_FQDN:35357/v3 \
+          --os-username admin \
+          --os-password $RDO_PASSWORD \
+          --os-user-domain-name $IPA_REALM \
+          --os-project-domain-name $IPA_REALM \
+          --os-domain-name $IPA_REALM \
+          role add --project $demo_project_id --user $demo_user_id SwiftOperator
+
+# Set our demo user up for Heat
+openstack --os-identity-api-version 3 \
+          --os-auth-url http://$VM_FQDN:35357/v3 \
+          --os-username admin \
+          --os-password $RDO_PASSWORD \
+          --os-user-domain-name $IPA_REALM \
+          --os-project-domain-name $IPA_REALM \
+          --os-domain-name $IPA_REALM \
+          role add --project $demo_project_id --user $demo_user_id heat_stack_owner
 
 # Create a simple Heat template for testing purposes
 cat > /home/$VM_USER_ID/test-template.yaml << EOF
