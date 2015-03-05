@@ -281,6 +281,26 @@ openstack --os-identity-api-version 3 \
           image create --disk-format qcow2 --container-format bare --public \
           --copy-from http://download.cirros-cloud.net/0.3.3/cirros-0.3.3-x86_64-disk.img cirros-0.3.3-x86_64
 
+# Wait until the image is active to proceed.  Time out
+# after 1 minute.
+loops=0
+while [  $loops -lt 12 ]; do
+    is_active=`openstack --os-identity-api-version 3 \
+        --os-auth-url http://$VM_FQDN:35357/v3 \
+        --os-username cloud_admin \
+        --os-password $RDO_PASSWORD \
+        --os-user-domain-name admin_domain \
+        --os-domain-name admin_domain \
+        image show -f value -c status cirros-0.3.3-x86_64`
+
+    if [ "$is_active" == "active" ]; then
+        break
+    fi
+
+    sleep 5
+    let loops++
+done
+
 # Set our demo user up for Swift
 openstack --os-identity-api-version 3 \
           --os-auth-url http://$VM_FQDN:35357/v3 \
