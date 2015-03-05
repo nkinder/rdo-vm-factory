@@ -51,9 +51,6 @@ sed -i 's/CONFIG_KEYSTONE_SERVICE_NAME=keystone/CONFIG_KEYSTONE_SERVICE_NAME=htt
 # Install RDO
 HOME=/root packstack --debug --answer-file=/root/answerfile.txt
 
-# Install OSC
-yum install -y python-openstackclient
-
 # NGK(TODO) This is a temporary workaround until a new version of OSC is
 # released that contains the fixes for LP#1378565 and Gerrit#108325.
 rpm -e python-openstackclient

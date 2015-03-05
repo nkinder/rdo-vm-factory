@@ -127,9 +127,6 @@ sed -i "s/CONFIG_\(.*\)_PW=.*/CONFIG_\1_PW=$RDO_PASSWORD/g" /root/answerfile.txt
 # Install RDO
 HOME=/root packstack --debug --answer-file=/root/answerfile.txt
 
-# Install OSC
-yum install -y python-openstackclient
-
 # NGK(TODO) It would be better to use the keystone or OSC CLI to
 # update the assignments instead of directly manipulating the
 # database.

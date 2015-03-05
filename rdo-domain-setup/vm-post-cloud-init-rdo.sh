@@ -53,9 +53,6 @@ sed -i 's/CONFIG_PROVISION_DEMO=y/CONFIG_PROVISION_DEMO=n/g' /root/answerfile.tx
 # Install RDO
 HOME=/root packstack --debug --answer-file=/root/answerfile.txt
 
-# Install OSC
-yum install -y python-openstackclient
-
 # Authenticate as IPA admin
 echo "$IPA_PASSWORD" | kinit admin
 
