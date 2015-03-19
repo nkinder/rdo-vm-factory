@@ -66,11 +66,8 @@ mkdir /etc/httpd/mellon
 cp ./http_${VM_FQDN}_keystone.* /etc/httpd/mellon/
 wget --ca-certificate=/etc/ipa/ca.crt -O /etc/httpd/mellon/idp-metadata.xml https://$IPA_FQDN/idp/saml2/metadata
 
-# NGK(TODO) - The SP data needs to be installed in Ipsilon.  CLI tools for this
-# have not been implemented yet.  It might be possible to steal the test code
-# from the ipsilon repo to automate this in the meantime.  For now, it needs to
-# be done manually by accessing Ipsilon in a brower and setting up a SP using
-# /etc/httpd/mellon/http_${VM_FQDN}_keystone.xml as the metadata.
+# Add our SP to Ipsilon
+/mnt/add-sp.py --url https://$IPA_FQDN/idp --password $IPA_PASSWORD --metadata /etc/httpd/mellon/http_${VM_FQDN}_keystone.xml keystone
 
 # Set up apache config files (load mellon module, configure wsgi files)
 cat > /etc/httpd/conf.d/auth_mellon.load << EOF
