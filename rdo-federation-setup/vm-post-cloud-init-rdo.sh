@@ -51,16 +51,6 @@ sed -i 's/CONFIG_KEYSTONE_SERVICE_NAME=keystone/CONFIG_KEYSTONE_SERVICE_NAME=htt
 # Install RDO
 HOME=/root packstack --debug --answer-file=/root/answerfile.txt
 
-# NGK(TODO) This is a temporary workaround until a new version of OSC is
-# released that contains the fixes for LP#1378565 and Gerrit#108325.
-rpm -e python-openstackclient
-pushd /opt
-git clone git://git.openstack.org/openstack/python-openstackclient
-pushd /opt/python-openstackclient
-python setup.py install
-popd
-popd
-
 # Install mod_auth_mellon
 wget -O /etc/yum.repos.d/xmlsec1.repo \
     https://copr.fedoraproject.org/coprs/simo/xmlsec1/repo/epel-7/simo-xmlsec1-epel-7.repo
@@ -123,6 +113,7 @@ EOF
 
 # Install pysaml2
 # NGK(TODO) This needs to be packaged and installed as a dependency via RPM
+yum install -y python-pip
 pip install pysaml2
 
 # Set up Keystone for OS-FEDERATION extension
