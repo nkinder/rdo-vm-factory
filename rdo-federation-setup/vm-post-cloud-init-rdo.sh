@@ -26,6 +26,12 @@ IPA_IP=$VM_IP
 # Use IPA for DNS discovery
 sed -i "s/^nameserver .*/nameserver $IPA_IP/g" /etc/resolv.conf
 
+# turn off and permanently disable firewall
+systemctl stop firewalld.service
+systemctl disable firewalld.service
+
+set -o errexit
+
 # Join IPA
 ipa-client-install -U -p admin@$IPA_REALM -w $IPA_PASSWORD
 
@@ -39,6 +45,8 @@ if [ -n "$USE_DELOREAN" ] ; then
         http://trunk.rdoproject.org/centos70/current/delorean.repo
     wget -O /etc/yum.repos.d/rdo-kilo.repo \
         http://copr.fedoraproject.org/coprs/apevec/RDO-Kilo/repo/epel-7/apevec-RDO-Kilo-epel-7.repo
+    wget -O /etc/yum.repos.d/pycrypto.repo \
+        http://copr.fedoraproject.org/coprs/npmccallum/python-cryptography/repo/epel-7/npmccallum-python-cryptography-epel-7.repo
 fi
 
 # Install packstack
@@ -56,6 +64,31 @@ sed -i 's/CONFIG_KEYSTONE_SERVICE_NAME=keystone/CONFIG_KEYSTONE_SERVICE_NAME=htt
 
 # Install RDO
 HOME=/root packstack --debug --answer-file=/root/answerfile.txt
+
+# Authenticate as IPA admin
+echo "$IPA_PASSWORD" | kinit admin
+
+# Add a federation test user
+create_ipa_user fedtest $RDO_PASSWORD
+
+# Get rid of the admin Kerberos ticket
+kdestroy
+
+# set password
+{ echo "$RDO_PASSWORD" ; echo "$RDO_PASSWORD" ; echo "$RDO_PASSWORD" ; } | kinit fedtest
+kdestroy
+
+# still need pip
+yum -y install python-pip
+
+# Install mod_auth_mellon
+wget -O /etc/yum.repos.d/xmlsec1.repo \
+    https://copr.fedoraproject.org/coprs/simo/xmlsec1/repo/epel-7/simo-xmlsec1-epel-7.repo
+wget -O /etc/yum.repos.d/lasso.repo \
+    https://copr.fedoraproject.org/coprs/simo/lasso/repo/epel-7/simo-lasso-epel-7.repo
+wget -O /etc/yum.repos.d/mellon.repo \
+    https://copr.fedoraproject.org/coprs/nkinder/mod_auth_mellon/repo/epel-7/nkinder-mod_auth_mellon-epel-7.repo
+yum install -y mod_auth_mellon
 
 # Set up our SP metadata and fetch the IdP metadata
 /usr/libexec/mod_auth_mellon/mellon_create_metadata.sh http://$VM_FQDN:5000/keystone http://$VM_FQDN:5000/v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2/auth/mellon
@@ -294,3 +327,116 @@ export PS1='[\u@\h \W(keystone_v3_admin)]\$ '
 EOF
 
 chown $VM_USER_ID:$VM_USER_ID /home/$VM_USER_ID/keystonerc_*
+
+############### test federated auth to http://$VM_FQDN:5000/v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2/auth
+# this will do the federated auth and get an unscoped keystone token
+test_federated_auth() {
+    login_name=fedtest
+    login_password=Secret12
+    osfurl=http://$VM_FQDN:5000/v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2/auth
+    HOME=${HOME:-/root}
+    log=$HOME/curltest.log
+    hdrs=$HOME/hdrs.txt
+    cookies=$HOME/.cookies
+    rm -f $cookies
+    #trace="--trace -"
+    curl -s $trace -w '\n' -D $hdrs -b $cookies -c $cookies --cacert /etc/ipa/ca.crt $osfurl > $log 2>&1
+    url2=`awk '/^Location:/ {print $2}' $hdrs`
+    echo $url2
+    curl -s $trace -w '\n' -D $hdrs -b $cookies -c $cookies --cacert /etc/ipa/ca.crt $url2 >> $log 2>&1
+    url3=`awk '/^Location:/ {print $2}' $hdrs`
+    echo $url3
+    curl -s $trace -w '\n' -D $hdrs -b $cookies -c $cookies --cacert /etc/ipa/ca.crt $url3 >> $log 2>&1
+    url4=`awk '/^Location:/ {print $2}' $hdrs`
+    echo $url4
+    curl -s $trace -w '\n' -D $hdrs -b $cookies -c $cookies --cacert /etc/ipa/ca.crt $url4 >> $log 2>&1
+    url5=`awk '/^Location:/ {print $2}' $hdrs`
+    echo $url5
+    curl -s -o $HOME/form.html $trace -w '\n' -D $hdrs -b $cookies -c $cookies --cacert /etc/ipa/ca.crt $url5 >> $log 2>&1
+    postpath=`xmllint --html --xpath 'string(//@action)' $HOME/form.html`
+    posturl=`echo "$url5" | sed -e "s,/idp/login/krb/negotiate,$postpath,"`
+    echo $posturl
+    ip_trans_id=`xmllint --html --xpath 'string(//input[@name="ipsilon_transaction_id"]/@value)' $HOME/form.html`
+    postdata="login_name=${login_name}&login_password=${login_password}&ipsilon_transaction_id=${ip_trans_id}"
+    curl -s $trace -w '\n' -D $hdrs -b $cookies -c $cookies --cacert /etc/ipa/ca.crt -d "$postdata" $posturl >> $log 2>&1
+    url6=`awk '/^Location:/ {print $2}' $hdrs`
+    echo $url6
+    curl -s -o $HOME/form.html $trace -w '\n' -D $hdrs -b $cookies -c $cookies --cacert /etc/ipa/ca.crt $url6 >> $log 2>&1
+    url7=`xmllint --html --xpath 'string(//@action)' $HOME/form.html`
+    {
+        echo -n "SAMLResponse="
+        xmllint --html --xpath 'string(//input[@name="SAMLResponse"]/@value)' $HOME/form.html | \
+            hexdump -v -e '/1 "%02x"' | sed 's/\(..\)/%\1/g' ;
+        echo -n "&RelayState="
+        xmllint --html --xpath 'string(//input[@name="RelayState"]/@value)' $HOME/form.html | \
+            hexdump -v -e '/1 "%02x"' | sed 's/\(..\)/%\1/g' ;
+    } > $HOME/form.dat
+    curl -s $trace -w '\n' -D $hdrs -b $cookies -c $cookies --cacert /etc/ipa/ca.crt -d@$HOME/form.dat $url7 >> $log 2>&1
+    url7=`awk '/^Location:/ {print $2}' $hdrs`
+    echo $url7
+    curl -s $trace -w '\n' -D $hdrs -b $cookies -c $cookies --cacert /etc/ipa/ca.crt $url7 >> $log 2>&1
+    token=`awk '/^X-Subject-Token:/ {print $2}' $hdrs`
+    echo token=$token
+}
+
+test_websso_auth() {
+    login_name=fedtest
+    login_password=Secret12
+    osfurl="http://$VM_FQDN:5000/v3/auth/OS-FEDERATION/websso/saml2?origin=http%3A//$VM_FQDN"
+    HOME=${HOME:-/root}
+    log=$HOME/webssotest.log
+    hdrs=$HOME/hdrs.txt
+    cookies=$HOME/.cookies
+    rm -f $cookies
+    #trace="--trace -"
+    curl -s $trace -w '\n' -D $hdrs -b $cookies -c $cookies --cacert /etc/ipa/ca.crt "$osfurl" > $log 2>&1
+    url2=`awk '/^Location:/ {print $2}' $hdrs`
+    echo $url2
+    curl -s $trace -w '\n' -D $hdrs -b $cookies -c $cookies --cacert /etc/ipa/ca.crt "$url2" >> $log 2>&1
+    url3=`awk '/^Location:/ {print $2}' $hdrs`
+    echo "$url3"
+    curl -s $trace -w '\n' -D $hdrs -b $cookies -c $cookies --cacert /etc/ipa/ca.crt "$url3" >> $log 2>&1
+    url4=`awk '/^Location:/ {print $2}' $hdrs`
+    echo "$url4"
+    curl -s $trace -w '\n' -D $hdrs -b $cookies -c $cookies --cacert /etc/ipa/ca.crt "$url4" >> $log 2>&1
+    url5=`awk '/^Location:/ {print $2}' $hdrs`
+    echo "$url5"
+    curl -s -o form.html $trace -w '\n' -D $hdrs -b $cookies -c $cookies --cacert /etc/ipa/ca.crt "$url5" >> $log 2>&1
+    postpath=`xmllint --html --xpath 'string(//@action)' form.html`
+    posturl=`echo "$url5" | sed -e "s,/idp/login/krb/negotiate,$postpath,"`
+    echo $posturl
+    ip_trans_id=`xmllint --html --xpath 'string(//input[@name="ipsilon_transaction_id"]/@value)' form.html`
+    postdata="login_name=${login_name}&login_password=${login_password}&ipsilon_transaction_id=${ip_trans_id}"
+    curl -s $trace -w '\n' -D $hdrs -b $cookies -c $cookies --cacert /etc/ipa/ca.crt -d "$postdata" $posturl >> $log 2>&1
+    url6=`awk '/^Location:/ {print $2}' $hdrs`
+    echo $url6
+    curl -s -o form.html $trace -w '\n' -D $hdrs -b $cookies -c $cookies --cacert /etc/ipa/ca.crt "$url6" >> $log 2>&1
+    url7=`xmllint --html --xpath 'string(//@action)' form.html`
+    {
+        echo -n "SAMLResponse="
+        xmllint --html --xpath 'string(//input[@name="SAMLResponse"]/@value)' form.html | \
+            hexdump -v -e '/1 "%02x"' | sed 's/\(..\)/%\1/g' ;
+        echo -n "&RelayState="
+        xmllint --html --xpath 'string(//input[@name="RelayState"]/@value)' form.html | \
+            hexdump -v -e '/1 "%02x"' | sed 's/\(..\)/%\1/g' ;
+    } > form.dat
+    curl -s $trace -w '\n' -D $hdrs -b $cookies -c $cookies --cacert /etc/ipa/ca.crt -d@form.dat "$url7" >> $log 2>&1
+    url8=`awk '/^Location:/ {print $2}' $hdrs`
+    echo $url8
+    curl -s -o form.html $trace -w '\n' -D $hdrs -b $cookies -c $cookies --cacert /etc/ipa/ca.crt "$url8" >> $log 2>&1
+    url9=`xmllint --html --xpath 'string(//@action)' form.html`
+    token=`xmllint --html --xpath 'string(//input[@name="token"]/@value)' form.html`
+    postdata="token=$token"
+    curl -s $trace -w '\n' -D $hdrs -b $cookies -c $cookies --cacert /etc/ipa/ca.crt -d "$postdata" "$url9" >> $log 2>&1
+    # token=`awk '/^X-Subject-Token:/ {print $2}' $hdrs`
+    # echo token=$token
+    url10=`awk '/^Location:/ {print $2}' $hdrs`
+    echo "$url10"
+    curl -s $trace -w '\n' -D $hdrs -b $cookies -c $cookies --cacert /etc/ipa/ca.crt "$url10" >> $log 2>&1
+}
+
+test_federated_auth
+
+if [ -n "$USE_WEBSSO" ] ; then
+    test_websso_auth
+fi
