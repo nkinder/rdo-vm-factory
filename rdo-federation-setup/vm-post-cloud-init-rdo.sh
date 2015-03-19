@@ -120,7 +120,13 @@ openstack-config --set /etc/keystone/keystone.conf auth saml2 keystone.auth.plug
 openstack-config --set /etc/keystone/keystone.conf paste_deploy config_file /etc/keystone/keystone-paste.ini
 cp /usr/share/keystone/keystone-dist-paste.ini /etc/keystone/keystone-paste.ini
 chown keystone:keystone /etc/keystone/keystone-paste.ini
-openstack-config --set /etc/keystone/keystone-paste.ini pipeline:api_v3 pipeline "sizelimit url_normalize build_auth_context token_auth admin_token_auth xml_body_v3 json_body ec2_extension_v3 s3_extension simple_cert_extension revoke_extension federation_extension service_v3"
+
+v3_pipeline=`openstack-config --get /etc/keystone/keystone-paste.ini pipeline:api_v3 pipeline`
+if [[ "$v3_pipeline" !=  *'federation_extension'* ]] ; then
+    new_v3_pipeline=`echo $v3_pipeline | sed -e 's/service_v3/federation_extension service_v3/g'`
+    openstack-config --set /etc/keystone/keystone-paste.ini pipeline:api_v3 pipeline "$new_v3_pipeline"
+fi
+
 keystone-manage db_sync --extension federation
 
 # Restart keystone
