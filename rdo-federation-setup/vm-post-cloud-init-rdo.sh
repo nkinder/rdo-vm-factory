@@ -82,19 +82,33 @@ cat > /etc/httpd/conf.d/auth_mellon.load << EOF
 LoadModule auth_mellon_module /usr/lib64/httpd/modules/mod_auth_mellon.so
 EOF
 
+if [ -z "$USE_WEBSSO" ] ; then
+    WEBSSO_COMMENT="#"
+fi
+
 sed -i 's/<\/VirtualHost>//g' /etc/httpd/conf.d/10-keystone_wsgi_main.conf
 cat >> /etc/httpd/conf.d/10-keystone_wsgi_main.conf << EOF
   WSGIScriptAliasMatch ^(/v3/OS-FEDERATION/identity_providers/.*?/protocols/.*?/auth)$ /var/www/cgi-bin/keystone/main/$1
 
-  <Location /v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2/auth>
-    AuthType "Mellon"
-    MellonEnable "auth"
+  <Location /v3>
+    MellonEnable "info"
     MellonSPPrivateKeyFile /etc/httpd/mellon/http_${VM_FQDN}_keystone.key
     MellonSPCertFile /etc/httpd/mellon/http_${VM_FQDN}_keystone.cert
     MellonSPMetadataFile /etc/httpd/mellon/http_${VM_FQDN}_keystone.xml
     MellonIdPMetadataFile /etc/httpd/mellon/idp-metadata.xml
     MellonEndpointPath /v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2/auth/mellon
+    MellonIdP "IDP"
   </Location>
+
+  <Location /v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2/auth>
+    AuthType "Mellon"
+    MellonEnable "auth"
+  </Location>
+
+${WEBSSO_COMMENT}  <Location /v3/auth/OS-FEDERATION/websso/saml2>
+${WEBSSO_COMMENT}    AuthType "Mellon"
+${WEBSSO_COMMENT}    MellonEnable "auth"
+${WEBSSO_COMMENT}  </Location>
 
 </VirtualHost>
 EOF
@@ -103,15 +117,25 @@ sed -i 's/<\/VirtualHost>//g' /etc/httpd/conf.d/10-keystone_wsgi_admin.conf
 cat >> /etc/httpd/conf.d/10-keystone_wsgi_admin.conf << EOF
   WSGIScriptAliasMatch ^(/v3/OS-FEDERATION/identity_providers/.*?/protocols/.*?/auth)$ /var/www/cgi-bin/keystone/main/$1
 
-  <Location /v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2/auth>
-    AuthType "Mellon"
-    MellonEnable "auth"
+  <Location /v3>
+    MellonEnable "info"
     MellonSPPrivateKeyFile /etc/httpd/mellon/http_${VM_FQDN}_keystone.key
     MellonSPCertFile /etc/httpd/mellon/http_${VM_FQDN}_keystone.cert
     MellonSPMetadataFile /etc/httpd/mellon/http_${VM_FQDN}_keystone.xml
     MellonIdPMetadataFile /etc/httpd/mellon/idp-metadata.xml
     MellonEndpointPath /v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2/auth/mellon
+    MellonIdP "IDP"
   </Location>
+
+  <Location /v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2/auth>
+    AuthType "Mellon"
+    MellonEnable "auth"
+  </Location>
+
+${WEBSSO_COMMENT}  <Location /v3/auth/OS-FEDERATION/websso/saml2>
+${WEBSSO_COMMENT}    AuthType "Mellon"
+${WEBSSO_COMMENT}    MellonEnable "auth"
+${WEBSSO_COMMENT}  </Location>
 
 </VirtualHost>
 EOF
@@ -128,6 +152,44 @@ openstack-config --set /etc/keystone/keystone.conf auth saml2 keystone.auth.plug
 openstack-config --set /etc/keystone/keystone.conf paste_deploy config_file /etc/keystone/keystone-paste.ini
 cp /usr/share/keystone/keystone-dist-paste.ini /etc/keystone/keystone-paste.ini
 chown keystone:keystone /etc/keystone/keystone-paste.ini
+
+if [ -n "$USE_WEBSSO" ] ; then
+    openstack-config --set /etc/keystone/keystone.conf federation remote_id_attribute MELLON_IDP
+    openstack-config --set /etc/keystone/keystone.conf federation trusted_dashboard http://rdo.rdodom.test
+
+    # NGK(TODO) This needs to be packaged in the keystone RPM (it's located
+    # in the keystone source tree)
+    cat > /etc/keystone/sso_callback_template.html << EOF
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <title>Keystone WebSSO redirect</title>
+  </head>
+  <body>
+     <form id="sso" name="sso" action="\$host" method="post">
+       Please wait...
+       <br/>
+       <input type="hidden" name="token" id="token" value="\$token"/>
+       <noscript>
+         <input type="submit" name="submit_no_javascript" id="submit_no_javascript"
+            value="If your JavaScript is disabled, please click to continue"/>
+       </noscript>
+     </form>
+     <script type="text/javascript">
+       window.onload = function() {
+         document.forms['sso'].submit();
+       }
+     </script>
+  </body>
+</html>
+EOF
+
+    # NGK(TODO) Patch keystone to properly use the remote_id when websso
+    # attempts to look up the identity provider (LP#1434701)
+    pushd /usr/lib/python2.7/site-packages/keystone
+    patch -p2 < /mnt/0001-Lookup-identity-provider-by-remote_id-for-websso.patch
+    popd
+fi
 
 v3_pipeline=`openstack-config --get /etc/keystone/keystone-paste.ini pipeline:api_v3 pipeline`
 if [[ "$v3_pipeline" !=  *'federation_extension'* ]] ; then
@@ -174,6 +236,21 @@ openstack --os-auth-url http://$VM_FQDN:5000/v3 \
           --os-project-name admin \
           --os-identity-api-version 3 \
           identity provider create --enable ipsilon
+
+# NGK(TODO) Add a remote_id to our newly created identity provider.  OSC doesn't support this
+# currently, but patches are proposed to allow us to specify the remote_id during creation of
+# the identity provider.
+if [ -n "$USE_WEBSSO" ] ; then
+    ADMIN_TOKEN=`openstack-config --get /etc/keystone/keystone.conf DEFAULT admin_token`
+    curl -si -X PATCH -d @- -H "X-Auth-Token:$ADMIN_TOKEN" -H "Content-type: application/json" \
+        http://$VM_FQDN:5000/v3/OS-FEDERATION/identity_providers/ipsilon << EOF
+{
+    "identity_provider": {
+        "remote_id": "https://$IPA_FQDN/idp/saml2/metadata"
+    }
+}
+EOF
+fi
 
 cat > /tmp/ipsilon_mapping.json << EOF
 [
@@ -224,7 +301,7 @@ cat > /home/$VM_USER_ID/keystonerc_v3_admin <<EOF
 export OS_USERNAME=admin
 export OS_PASSWORD=$RDO_PASSWORD
 export OS_PROJECT_NAME=admin
-export OS_AUTH_URL=http://$RDO_VM_FQDN:5000/v3/
+export OS_AUTH_URL=http://$VM_FQDN:5000/v3/
 export OS_IDENTITY_API_VERSION=3
 export PS1='[\u@\h \W(keystone_v3_admin)]\$ '
 EOF
