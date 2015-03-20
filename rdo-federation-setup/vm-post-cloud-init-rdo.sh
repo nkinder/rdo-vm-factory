@@ -144,67 +144,77 @@ systemctl restart httpd.service
 openstack --os-auth-url http://$VM_FQDN:5000/v3 \
           --os-user-domain-name default \
           --os-username admin \
-          --os-password Secret12 \
+          --os-password $RDO_PASSWORD \
           --os-project-domain-name default \
           --os-project-name admin \
           --os-identity-api-version 3 \
           group create admins
+
+FED_GROUP_ID=`openstack --os-auth-url http://$VM_FQDN:5000/v3 \
+                        --os-user-domain-name default \
+                        --os-username admin --os-password $RDO_PASSWORD \
+                        --os-project-domain-name default \
+                        --os-project-name admin --os-identity-api-version 3 \
+                        group show admins -f value -c id`
+
 openstack --os-auth-url http://$VM_FQDN:5000/v3 \
           --os-user-domain-name default \
           --os-username admin \
-          --os-password Secret12 \
+          --os-password $RDO_PASSWORD \
           --os-project-domain-name default \
           --os-project-name admin \
           --os-identity-api-version 3 \
           role add --group admins --project admin admin
+
 openstack --os-auth-url http://$VM_FQDN:5000/v3 \
           --os-user-domain-name default \
           --os-username admin \
-          --os-password Secret12 \
+          --os-password $RDO_PASSWORD \
           --os-project-domain-name default \
           --os-project-name admin \
           --os-identity-api-version 3 \
           identity provider create --enable ipsilon
 
-# NGK(TODO) This should be possible with OSC now.  Also, we should enable the info plugin for Ipsilon
-# to allow us to use a better mapping based on remote groups.
-# Create mapping and IdP protocol in Keystone.
-ADMIN_TOKEN=`grep ^admin_token /etc/keystone/keystone.conf | sed -e 's/admin_token=//g'`
-FED_GROUP_ID=`openstack --os-auth-url http://$VM_FQDN:5000/v3 --os-user-domain-name default --os-username admin --os-password Secret12 \
-    --os-project-domain-name default --os-project-name admin --os-identity-api-version 3 group show admins -f value -c id`
-curl -si -X PUT -d @- -H "X-Auth-Token:$ADMIN_TOKEN" -H "Content-type: application/json" http://$VM_FQDN:5000/v3/OS-FEDERATION/mappings/ipsilon_mapping << EOF
+cat > /tmp/ipsilon_mapping.json << EOF
+[
     {
-        "mapping": {
-            "rules": [
-                {
-                    "local": [
-                        {
-                            "user": {
-                                "name": "{0}"
-                            },
-                            "group": {
-                                "id": "$FED_GROUP_ID"
-                            }
-                        }
-                    ],
-                    "remote": [
-                        {
-                            "type": "MELLON_NAME_ID"
-                        }
-                    ]
+        "local": [
+            {
+                "user": {
+                    "name": "{0}"
+                },
+                "group": {
+                    "id": "$FED_GROUP_ID"
                 }
-            ]
-        }
+            }
+        ],
+        "remote": [
+            {
+                "type": "MELLON_NAME_ID"
+            }
+        ]
     }
+]
 EOF
 
-curl -si -X PUT -d @- -H "X-Auth-Token:$ADMIN_TOKEN" -H "Content-type: application/json" http://$VM_FQDN:5000/v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2 << EOF
-    {
-        "protocol": {
-            "mapping_id": "ipsilon_mapping"
-        }
-    }
-EOF
+openstack --os-auth-url http://$VM_FQDN:5000/v3 \
+          --os-user-domain-name default \
+          --os-username admin \
+          --os-password $RDO_PASSWORD \
+          --os-project-domain-name default \
+          --os-project-name admin \
+          --os-identity-api-version 3 \
+          mapping create --rules /tmp/ipsilon_mapping.json ipsilon_mapping
+
+openstack --os-auth-url http://$VM_FQDN:5000/v3 \
+          --os-user-domain-name default \
+          --os-username admin \
+          --os-password $RDO_PASSWORD \
+          --os-project-domain-name default \
+          --os-project-name admin \
+          --os-identity-api-version 3 \
+          federation protocol create --identity-provider ipsilon \
+          --mapping ipsilon_mapping saml2
 
 # Copy our keystonerc files to our normal user's home directory.
 cp /root/keystonerc_* /home/$VM_USER_ID
