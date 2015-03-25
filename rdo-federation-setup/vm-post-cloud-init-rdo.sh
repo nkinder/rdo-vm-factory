@@ -208,6 +208,13 @@ fi
 
 keystone-manage db_sync --extension federation
 
+# get DOA patch
+doachange=20
+git clone https://review.openstack.org/openstack/django_openstack_auth && cd django_openstack_auth && git fetch origin refs/changes/78/136178/$doachange && git checkout FETCH_HEAD && python setup.py install && cd ..
+# get Horizon patch
+horizonchange=34
+git clone https://review.openstack.org/openstack/horizon && cd horizon && git fetch origin refs/changes/42/151842/$horizonchange && git checkout FETCH_HEAD && cd ..
+
 # Restart keystone
 systemctl restart httpd.service
 
