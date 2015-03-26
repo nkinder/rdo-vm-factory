@@ -155,7 +155,7 @@ chown keystone:keystone /etc/keystone/keystone-paste.ini
 
 if [ -n "$USE_WEBSSO" ] ; then
     openstack-config --set /etc/keystone/keystone.conf federation remote_id_attribute MELLON_IDP
-    openstack-config --set /etc/keystone/keystone.conf federation trusted_dashboard http://rdo.rdodom.test
+    openstack-config --set /etc/keystone/keystone.conf federation trusted_dashboard http://${VM_FQDN}
 
     # NGK(TODO) This needs to be packaged in the keystone RPM (it's located
     # in the keystone source tree)
