@@ -183,12 +183,6 @@ if [ -n "$USE_WEBSSO" ] ; then
   </body>
 </html>
 EOF
-
-    # NGK(TODO) Patch keystone to properly use the remote_id when websso
-    # attempts to look up the identity provider (LP#1434701)
-    pushd /usr/lib/python2.7/site-packages/keystone
-    patch -p2 < /mnt/0001-Lookup-identity-provider-by-remote_id-for-websso.patch
-    popd
 fi
 
 v3_pipeline=`openstack-config --get /etc/keystone/keystone-paste.ini pipeline:api_v3 pipeline`
