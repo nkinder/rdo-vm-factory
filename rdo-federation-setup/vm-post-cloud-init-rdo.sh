@@ -40,7 +40,7 @@ if [ -n "$USE_DELOREAN" ] ; then
     wget -O /etc/yum.repos.d/rdo-kilo.repo \
         http://copr.fedoraproject.org/coprs/apevec/RDO-Kilo/repo/epel-7/apevec-RDO-Kilo-epel-7.repo
     wget -O /etc/yum.repos.d/pycrypto.repo \
-        http://copr.fedoraproject.org/coprs/npmccallum/python-cryptography/repo/epel-7/npmccallum-python-cryptography-epel-7 .repo
+        http://copr.fedoraproject.org/coprs/npmccallum/python-cryptography/repo/epel-7/npmccallum-python-cryptography-epel-7.repo
 fi
 
 # Install packstack
