@@ -140,10 +140,12 @@ ${WEBSSO_COMMENT}  </Location>
 </VirtualHost>
 EOF
 
-# Install pysaml2
-# NGK(TODO) This needs to be packaged and installed as a dependency via RPM
-yum install -y python-pip
-pip install pysaml2
+if [ -z "$USE_DELOREAN" ]; then
+    # Install pysaml2
+    # NGK(TODO) This needs to be packaged and installed as a dependency via RPM
+    yum install -y python-pip
+    pip install pysaml2
+fi
 
 # Set up Keystone for OS-FEDERATION extension
 openstack-config --set /etc/keystone/keystone.conf federation driver keystone.contrib.federation.backends.sql.Federation
@@ -222,28 +224,39 @@ openstack --os-auth-url http://$VM_FQDN:5000/v3 \
           --os-identity-api-version 3 \
           role add --group admins --project admin admin
 
-openstack --os-auth-url http://$VM_FQDN:5000/v3 \
-          --os-user-domain-name default \
-          --os-username admin \
-          --os-password $RDO_PASSWORD \
-          --os-project-domain-name default \
-          --os-project-name admin \
-          --os-identity-api-version 3 \
-          identity provider create --enable ipsilon
+if [ -n "$USE_DELOREAN" ]; then
+    openstack --os-auth-url http://$VM_FQDN:5000/v3 \
+              --os-user-domain-name default \
+              --os-username admin \
+              --os-password $RDO_PASSWORD \
+              --os-project-domain-name default \
+              --os-project-name admin \
+              --os-identity-api-version 3 \
+              identity provider create --enable ipsilon --remote-id https://$IPA_FQDN/idp/saml2/metadata
+else
+    openstack --os-auth-url http://$VM_FQDN:5000/v3 \
+              --os-user-domain-name default \
+              --os-username admin \
+              --os-password $RDO_PASSWORD \
+              --os-project-domain-name default \
+              --os-project-name admin \
+              --os-identity-api-version 3 \
+              identity provider create --enable ipsilon
 
-# NGK(TODO) Add a remote_id to our newly created identity provider.  OSC doesn't support this
-# currently, but patches are proposed to allow us to specify the remote_id during creation of
-# the identity provider.
-if [ -n "$USE_WEBSSO" ] ; then
-    ADMIN_TOKEN=`openstack-config --get /etc/keystone/keystone.conf DEFAULT admin_token`
-    curl -si -X PATCH -d @- -H "X-Auth-Token:$ADMIN_TOKEN" -H "Content-type: application/json" \
-        http://$VM_FQDN:5000/v3/OS-FEDERATION/identity_providers/ipsilon << EOF
+    # NGK(TODO) Add a remote_id to our newly created identity provider. OSC doesn't support this
+    # currently, but patches are proposed to allow us to specify the remote_id during creation of
+    # the identity provider.
+    if [ -n "$USE_WEBSSO" ] ; then
+        ADMIN_TOKEN=`openstack-config --get /etc/keystone/keystone.conf DEFAULT admin_token`
+        curl -si -X PATCH -d @- -H "X-Auth-Token:$ADMIN_TOKEN" -H "Content-type: application/json" \
+            http://$VM_FQDN:5000/v3/OS-FEDERATION/identity_providers/ipsilon << EOF
 {
     "identity_provider": {
         "remote_id": "https://$IPA_FQDN/idp/saml2/metadata"
     }
 }
 EOF
+    fi
 fi
 
 cat > /tmp/ipsilon_mapping.json << EOF
