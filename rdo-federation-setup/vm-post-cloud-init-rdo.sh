@@ -56,8 +56,23 @@ sed -i 's/CONFIG_NEUTRON_INSTALL=y/CONFIG_NEUTRON_INSTALL=n/g' /root/answerfile.
 sed -i "s/CONFIG_\(.*\)_PW=.*/CONFIG_\1_PW=$RDO_PASSWORD/g" /root/answerfile.txt
 sed -i 's/CONFIG_KEYSTONE_SERVICE_NAME=keystone/CONFIG_KEYSTONE_SERVICE_NAME=httpd/g' /root/answerfile.txt
 
+# NGK(TODO) A newer Horizon is not currently provided in the Delorean repos.
+# Packstack will attempt to install the Juno version of Horizon, but this will
+# fail when the Delorean repos are configured due to some imcompatible
+# dependencies.  We just skip installing Horizon via packstack until Delorean
+# includes a newer Horizon package.
+if [ -n "$USE_DELOREAN" ] ; then
+    sed -i 's/CONFIG_HORIZON_INSTALL=y/CONFIG_HORIZON_INSTALL=n/g' /root/answerfile.txt
+fi
+
 # Install RDO
 HOME=/root packstack --debug --answer-file=/root/answerfile.txt
+
+# NGK(TODO) Install the Juno Horizon since we skipped it during the
+# packstack run.
+if [ -n "$USE_DELOREAN" ] ; then
+    yum --disablerepo=apevec-RDO-Kilo install -y openstack-dashboard
+fi
 
 # Install mod_auth_mellon
 wget -O /etc/yum.repos.d/xmlsec1.repo \
