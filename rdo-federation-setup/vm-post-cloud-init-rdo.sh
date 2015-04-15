@@ -39,8 +39,6 @@ if [ -n "$USE_DELOREAN" ] ; then
         http://trunk.rdoproject.org/centos70/current/delorean.repo
     wget -O /etc/yum.repos.d/rdo-kilo.repo \
         http://copr.fedoraproject.org/coprs/apevec/RDO-Kilo/repo/epel-7/apevec-RDO-Kilo-epel-7.repo
-    wget -O /etc/yum.repos.d/pycrypto.repo \
-        http://copr.fedoraproject.org/coprs/npmccallum/python-cryptography/repo/epel-7/npmccallum-python-cryptography-epel-7.repo
 fi
 
 # Install packstack
@@ -56,32 +54,8 @@ sed -i 's/CONFIG_NEUTRON_INSTALL=y/CONFIG_NEUTRON_INSTALL=n/g' /root/answerfile.
 sed -i "s/CONFIG_\(.*\)_PW=.*/CONFIG_\1_PW=$RDO_PASSWORD/g" /root/answerfile.txt
 sed -i 's/CONFIG_KEYSTONE_SERVICE_NAME=keystone/CONFIG_KEYSTONE_SERVICE_NAME=httpd/g' /root/answerfile.txt
 
-# NGK(TODO) A newer Horizon is not currently provided in the Delorean repos.
-# Packstack will attempt to install the Juno version of Horizon, but this will
-# fail when the Delorean repos are configured due to some imcompatible
-# dependencies.  We just skip installing Horizon via packstack until Delorean
-# includes a newer Horizon package.
-if [ -n "$USE_DELOREAN" ] ; then
-    sed -i 's/CONFIG_HORIZON_INSTALL=y/CONFIG_HORIZON_INSTALL=n/g' /root/answerfile.txt
-fi
-
 # Install RDO
 HOME=/root packstack --debug --answer-file=/root/answerfile.txt
-
-# NGK(TODO) Install the Juno Horizon since we skipped it during the
-# packstack run.
-if [ -n "$USE_DELOREAN" ] ; then
-    yum --disablerepo=apevec-RDO-Kilo install -y openstack-dashboard
-fi
-
-# Install mod_auth_mellon
-wget -O /etc/yum.repos.d/xmlsec1.repo \
-    https://copr.fedoraproject.org/coprs/simo/xmlsec1/repo/epel-7/simo-xmlsec1-epel-7.repo
-wget -O /etc/yum.repos.d/lasso.repo \
-    https://copr.fedoraproject.org/coprs/simo/lasso/repo/epel-7/simo-lasso-epel-7.repo
-wget -O /etc/yum.repos.d/mellon.repo \
-    https://copr.fedoraproject.org/coprs/nkinder/mod_auth_mellon/repo/epel-7/nkinder-mod_auth_mellon-epel-7.repo
-yum install -y mod_auth_mellon
 
 # Set up our SP metadata and fetch the IdP metadata
 /usr/libexec/mod_auth_mellon/mellon_create_metadata.sh http://$VM_FQDN:5000/keystone http://$VM_FQDN:5000/v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2/auth/mellon
@@ -172,33 +146,24 @@ chown keystone:keystone /etc/keystone/keystone-paste.ini
 
 if [ -n "$USE_WEBSSO" ] ; then
     openstack-config --set /etc/keystone/keystone.conf federation remote_id_attribute MELLON_IDP
-    openstack-config --set /etc/keystone/keystone.conf federation trusted_dashboard http://${VM_FQDN}
+    openstack-config --set /etc/keystone/keystone.conf federation trusted_dashboard http://${VM_FQDN}/auth/websso/
 
-    # NGK(TODO) This needs to be packaged in the keystone RPM (it's located
-    # in the keystone source tree)
-    cat > /etc/keystone/sso_callback_template.html << EOF
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml">
-  <head>
-    <title>Keystone WebSSO redirect</title>
-  </head>
-  <body>
-     <form id="sso" name="sso" action="\$host" method="post">
-       Please wait...
-       <br/>
-       <input type="hidden" name="token" id="token" value="\$token"/>
-       <noscript>
-         <input type="submit" name="submit_no_javascript" id="submit_no_javascript"
-            value="If your JavaScript is disabled, please click to continue"/>
-       </noscript>
-     </form>
-     <script type="text/javascript">
-       window.onload = function() {
-         document.forms['sso'].submit();
-       }
-     </script>
-  </body>
-</html>
+    # Configure Horizon for WebSSO
+    sed -i "s/^OPENSTACK_KEYSTONE_URL = .*/OPENSTACK_KEYSTONE_URL = \"http:\/\/$VM_FQDN:5000\/v3\"/g" \
+        /etc/openstack-dashboard/local_settings
+
+    cat >> /etc/openstack-dashboard/local_settings << EOF
+OPENSTACK_API_VERSIONS = {
+     "identity": 3
+}
+
+WEBSSO_ENABLED = True
+WEBSSO_CHOICES = (
+  ("credentials", _("Keystone Credentials")),
+  ("saml2", _("Security Assertion Markup Language"))
+)
+
+WEBSSO_INITIAL_CHOICE = "saml2"
 EOF
 fi
 
