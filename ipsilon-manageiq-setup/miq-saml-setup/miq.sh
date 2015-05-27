@@ -12,7 +12,13 @@ yum install -y mod_auth_mellon
 mkdir /etc/httpd/saml2
 wget --ca-certificate=/etc/ipa/ca.crt -O /etc/httpd/saml2/idp-metadata.xml https://$IPSILON_FQDN/idp/saml2/metadata
 pushd /etc/httpd/saml2
+# NGK(TODO) This is something we should handle with ipsilon-client-install
+# in the future.
 /usr/libexec/mod_auth_mellon/mellon_create_metadata.sh https://$(hostname) https://$(hostname)/saml2
+
+# Add 'unspecified' nameid to metadata
+sed -i 's/<\/SPSSODescriptor>/  <NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified<\/NameIDFormat>\n  <\/SPSSODescriptor>/g' \
+    ./https_$(hostname).xml
 popd
 
 # Register SP
