@@ -208,6 +208,8 @@ if [ -n "$PACKSTACK_LDAP" -a -n "$IPA_IS_READ_ONLY" ] ; then
     SWIFT_KS_PW=`uuidgen`
     TEMPEST_USER=tempest
     TEMPEST_USER_PW=`uuidgen`
+    TROVE_USER=trove
+    TROVE_KS_PW=`uuidgen`
     # Authenticate as IPA admin
     echo "$IPA_PASSWORD" | kinit admin
 
@@ -221,6 +223,7 @@ if [ -n "$PACKSTACK_LDAP" -a -n "$IPA_IS_READ_ONLY" ] ; then
     create_ipa_user $NOVA_USER "$NOVA_KS_PW"
     create_ipa_user $SWIFT_USER "$SWIFT_KS_PW"
     create_ipa_user $TEMPEST_USER "$TEMPEST_USER_PW"
+    create_ipa_user $TROVE_USER "$TROVE_KS_PW"
     if [ "$KEYSTONE_USER" != keystone ] ; then
         create_ipa_user keystone "$RDO_PASSWORD"
     fi
@@ -243,6 +246,7 @@ fi
 # Set up our answerfile
 HOME=/root packstack --gen-answer-file=/root/answerfile.txt
 sed -i 's/CONFIG_NEUTRON_INSTALL=y/CONFIG_NEUTRON_INSTALL=n/g' /root/answerfile.txt
+sed -i 's/CONFIG_TROVE_INSTALL=n/CONFIG_TROVE_INSTALL=y/g' /root/answerfile.txt
 sed -i "s/CONFIG_\(.*\)_PW=.*/CONFIG_\1_PW=$RDO_PASSWORD/g" /root/answerfile.txt
 sed -i 's/CONFIG_KEYSTONE_SERVICE_NAME=keystone/CONFIG_KEYSTONE_SERVICE_NAME=httpd/g' /root/answerfile.txt
 if [ -n "$PACKSTACK_LDAP" ] ; then
@@ -299,6 +303,8 @@ if [ -n "$PACKSTACK_LDAP" -a -n "$IPA_IS_READ_ONLY" ] ; then
     sed -i "s/^CONFIG_NEUTRON_KS_PW=.*$/CONFIG_NEUTRON_KS_PW=$NEUTRON_KS_PW/" /root/answerfile.txt
     sed -i "s/^CONFIG_NOVA_KS_PW=.*$/CONFIG_NOVA_KS_PW=$NOVA_KS_PW/" /root/answerfile.txt
     sed -i "s/^CONFIG_SWIFT_KS_PW=.*$/CONFIG_SWIFT_KS_PW=$SWIFT_KS_PW/" /root/answerfile.txt
+    sed -i "s/^CONFIG_TROVE_KS_PW=.*$/CONFIG_TROVE_KS_PW=$TROVE_KS_PW/" /root/answerfile.txt
+    sed -i "s/^CONFIG_TROVE_NOVA_USER=.*$/CONFIG_TROVE_NOVA_USER=$TROVE_USER/" /root/answerfile.txt
     sed -i "s/^CONFIG_PROVISION_TEMPEST_USER_PW=.*$/CONFIG_PROVISION_TEMPEST_USER_PW=$TEMPEST_USER_PW/" /root/answerfile.txt
     sed -i "s/^CONFIG_KEYSTONE_ADMIN_USERNAME=.*$/CONFIG_KEYSTONE_ADMIN_USERNAME=$KEYSTONE_USER/" /root/answerfile.txt
     sed -i "s/^CONFIG_KEYSTONE_ADMIN_EMAIL=.*$/CONFIG_KEYSTONE_ADMIN_EMAIL=$KEYSTONE_ADMIN_EMAIL/" /root/answerfile.txt
