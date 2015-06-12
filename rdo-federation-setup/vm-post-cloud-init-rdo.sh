@@ -3,7 +3,11 @@
 # new vm - it is run by root
 
 create_ipa_user() {
-    echo "$2" | ipa user-add $1 --cn="$1 user" --first="$1" --last="user" --password
+    if ipa user-find $1 ; then
+        echo using existing user $1
+    else
+        echo "$2" | ipa user-add $1 --cn="$1 user" --first="$1" --last="user" --password
+    fi
 }
 
 ##### MAIN BEGINS HERE #####
@@ -33,7 +37,7 @@ systemctl disable firewalld.service
 set -o errexit
 
 # Join IPA
-ipa-client-install -U -p admin@$IPA_REALM -w $IPA_PASSWORD
+ipa-client-install -U -p admin@$IPA_REALM -w $IPA_PASSWORD --force-join
 
 # RDO requires EPEL
 yum install -y epel-release
@@ -89,78 +93,10 @@ wget -O /etc/yum.repos.d/lasso.repo \
 wget -O /etc/yum.repos.d/mellon.repo \
     https://copr.fedoraproject.org/coprs/nkinder/mod_auth_mellon/repo/epel-7/nkinder-mod_auth_mellon-epel-7.repo
 yum install -y mod_auth_mellon
-
-# Set up our SP metadata and fetch the IdP metadata
-/usr/libexec/mod_auth_mellon/mellon_create_metadata.sh http://$VM_FQDN:5000/keystone http://$VM_FQDN:5000/v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2/auth/mellon
-mkdir /etc/httpd/mellon
-cp ./http_${VM_FQDN}_keystone.* /etc/httpd/mellon/
-wget --ca-certificate=/etc/ipa/ca.crt -O /etc/httpd/mellon/idp-metadata.xml https://$IPA_FQDN/idp/saml2/metadata
-
-# Add our SP to Ipsilon
-/mnt/add-sp.py --url https://$IPA_FQDN/idp --password $IPA_PASSWORD --metadata /etc/httpd/mellon/http_${VM_FQDN}_keystone.xml keystone
-
-# Set up apache config files (load mellon module, configure wsgi files)
-cat > /etc/httpd/conf.d/auth_mellon.load << EOF
-LoadModule auth_mellon_module /usr/lib64/httpd/modules/mod_auth_mellon.so
-EOF
-
-if [ -z "$USE_WEBSSO" ] ; then
-    WEBSSO_COMMENT="#"
-fi
-
-sed -i 's/<\/VirtualHost>//g' /etc/httpd/conf.d/10-keystone_wsgi_main.conf
-cat >> /etc/httpd/conf.d/10-keystone_wsgi_main.conf << EOF
-  WSGIScriptAliasMatch ^(/v3/OS-FEDERATION/identity_providers/.*?/protocols/.*?/auth)$ /var/www/cgi-bin/keystone/main/$1
-
-  <Location /v3>
-    MellonEnable "info"
-    MellonSPPrivateKeyFile /etc/httpd/mellon/http_${VM_FQDN}_keystone.key
-    MellonSPCertFile /etc/httpd/mellon/http_${VM_FQDN}_keystone.cert
-    MellonSPMetadataFile /etc/httpd/mellon/http_${VM_FQDN}_keystone.xml
-    MellonIdPMetadataFile /etc/httpd/mellon/idp-metadata.xml
-    MellonEndpointPath /v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2/auth/mellon
-    MellonIdP "IDP"
-  </Location>
-
-  <Location /v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2/auth>
-    AuthType "Mellon"
-    MellonEnable "auth"
-  </Location>
-
-${WEBSSO_COMMENT}  <Location /v3/auth/OS-FEDERATION/websso/saml2>
-${WEBSSO_COMMENT}    AuthType "Mellon"
-${WEBSSO_COMMENT}    MellonEnable "auth"
-${WEBSSO_COMMENT}  </Location>
-
-</VirtualHost>
-EOF
-
-sed -i 's/<\/VirtualHost>//g' /etc/httpd/conf.d/10-keystone_wsgi_admin.conf
-cat >> /etc/httpd/conf.d/10-keystone_wsgi_admin.conf << EOF
-  WSGIScriptAliasMatch ^(/v3/OS-FEDERATION/identity_providers/.*?/protocols/.*?/auth)$ /var/www/cgi-bin/keystone/main/$1
-
-  <Location /v3>
-    MellonEnable "info"
-    MellonSPPrivateKeyFile /etc/httpd/mellon/http_${VM_FQDN}_keystone.key
-    MellonSPCertFile /etc/httpd/mellon/http_${VM_FQDN}_keystone.cert
-    MellonSPMetadataFile /etc/httpd/mellon/http_${VM_FQDN}_keystone.xml
-    MellonIdPMetadataFile /etc/httpd/mellon/idp-metadata.xml
-    MellonEndpointPath /v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2/auth/mellon
-    MellonIdP "IDP"
-  </Location>
-
-  <Location /v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2/auth>
-    AuthType "Mellon"
-    MellonEnable "auth"
-  </Location>
-
-${WEBSSO_COMMENT}  <Location /v3/auth/OS-FEDERATION/websso/saml2>
-${WEBSSO_COMMENT}    AuthType "Mellon"
-${WEBSSO_COMMENT}    MellonEnable "auth"
-${WEBSSO_COMMENT}  </Location>
-
-</VirtualHost>
-EOF
+# Install ipsilon-client
+wget -O /etc/yum.repos.d/ipsilon.repo \
+    https://copr.fedoraproject.org/coprs/nkinder/ipsilon/repo/epel-7/nkinder-ipsilon-epel-7.repo
+yum install -y ipsilon-client
 
 if [ -z "$USE_DELOREAN" ]; then
     # Install pysaml2
@@ -169,13 +105,117 @@ if [ -z "$USE_DELOREAN" ]; then
     pip install pysaml2
 fi
 
-# Set up Keystone for OS-FEDERATION extension
-openstack-config --set /etc/keystone/keystone.conf federation driver keystone.contrib.federation.backends.sql.Federation
-openstack-config --set /etc/keystone/keystone.conf auth methods external,password,token,saml2
-openstack-config --set /etc/keystone/keystone.conf auth saml2 keystone.auth.plugins.mapped.Mapped
-openstack-config --set /etc/keystone/keystone.conf paste_deploy config_file /etc/keystone/keystone-paste.ini
-cp /usr/share/keystone/keystone-dist-paste.ini /etc/keystone/keystone-paste.ini
-chown keystone:keystone /etc/keystone/keystone-paste.ini
+if [ "$USE_IPSILON_PUPPET" = 1 ] ; then
+    echo using puppet
+elif [ "$USE_IPSILON_CLIENT" = 1 ] ; then
+    IPSILON_ADMIN_PASSWORD="$IPA_PASSWORD" \
+    /share/ipsilon/ipsilon/install/ipsilon-client-install --saml-sp-name keystone --port 5000 \
+                           --saml-base /v3 \
+                           --saml-auth /v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2/auth \
+                           --saml-sp /v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2/auth/mellon \
+                           --saml-idp-url https://$IPA_FQDN/idp \
+                           --saml-sp-logout /v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2/auth/mellon/logout \
+                           --saml-sp-post /v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2/auth/mellon/postResponse \
+                           --saml-insecure-setup --http-saml-conf-file /etc/httpd/conf.d/keystone-ipsilon.conf
+
+    # fix up /etc/httpd/conf.d/ipsilon-saml.conf to make it suitable for wsgi virtualhost
+    # this should be done by a working --saml-secure-setup False setting
+#    sed -i -e '/SSLRequireSSL/d' -e '/MellonsecureCookie/d' -e '/^Rewrite/d' /etc/httpd/conf.d/ipsilon-saml.conf
+    cat > /etc/httpd/conf.d/headers.load << EOF
+LoadModule headers_module modules/mod_headers.so
+EOF
+else
+    # Set up our SP metadata and fetch the IdP metadata
+    /usr/libexec/mod_auth_mellon/mellon_create_metadata.sh http://$VM_FQDN:5000/keystone http://$VM_FQDN:5000/v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2/auth/mellon
+    mkdir /etc/httpd/mellon
+    cp ./http_${VM_FQDN}_keystone.* /etc/httpd/mellon/
+    wget --ca-certificate=/etc/ipa/ca.crt -O /etc/httpd/mellon/idp-metadata.xml https://$IPA_FQDN/idp/saml2/metadata
+
+    # Add our SP to Ipsilon
+    /mnt/add-sp.py --url https://$IPA_FQDN/idp --password $IPA_PASSWORD --metadata /etc/httpd/mellon/http_${VM_FQDN}_keystone.xml keystone
+    # echo -n "admin" > /etc/httpd/mellon/idp_username.txt
+    # echo -n "$IPA_PASSWORD" > /etc/httpd/mellon/idp_password.txt
+    # curl --cacert /etc/ipa/ca.crt \
+    #      --data-urlencode login_name@/etc/httpd/mellon/idp_username.txt \
+    #      --data-urlencode login_password@/etc/httpd/mellon/idp_password.txt \
+    #      -b /etc/httpd/mellon/cookies -c /etc/httpd/mellon/cookies \
+    #      https://$IPA_FQDN/idp/login/form
+    # curl --cacert /etc/ipa/ca.crt --referer https://$IPA_FQDN/idp/rest/providers/saml2/SPS/keystone \
+    #      -b /etc/httpd/mellon/cookies -c /etc/httpd/mellon/cookies \
+    #      --data-urlencode metadata@/etc/httpd/mellon/http_${VM_FQDN}_keystone.xml \
+    #      https://$IPA_FQDN/idp/rest/providers/saml2/SPS/keystone
+    #cleanup secrets
+    # rm -f /etc/httpd/mellon/idp_username.txt /etc/httpd/mellon/idp_password.txt /etc/httpd/mellon/cookies
+    if [ -z "$USE_WEBSSO" ] ; then
+        WEBSSO_COMMENT="#"
+    fi
+    cat > /etc/httpd/conf.d/keystone-ipsilon.conf <<EOF
+  <Location /v3>
+    MellonEnable "info"
+    MellonSPPrivateKeyFile /etc/httpd/mellon/http_${VM_FQDN}_keystone.key
+    MellonSPCertFile /etc/httpd/mellon/http_${VM_FQDN}_keystone.cert
+    MellonSPMetadataFile /etc/httpd/mellon/http_${VM_FQDN}_keystone.xml
+    MellonIdPMetadataFile /etc/httpd/mellon/idp-metadata.xml
+    MellonEndpointPath /v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2/auth/mellon
+    MellonIdP "IDP"
+  </Location>
+
+  <Location /v3/OS-FEDERATION/identity_providers/ipsilon/protocols/saml2/auth>
+    AuthType "Mellon"
+    MellonEnable "auth"
+  </Location>
+
+${WEBSSO_COMMENT}  <Location /v3/auth/OS-FEDERATION/websso/saml2>
+${WEBSSO_COMMENT}    AuthType "Mellon"
+${WEBSSO_COMMENT}    MellonEnable "auth"
+${WEBSSO_COMMENT}  </Location>
+
+EOF
+fi
+
+if [ "$USE_IPSILON_PUPPET" = 1 ] ; then
+    pushd /usr/share/openstack-puppet/modules
+    ln -s /share/puppet-apache-auth-mods apache_auth
+    popd
+    puppet apply --debug --modulepath /usr/share/openstack-puppet/modules /usr/share/openstack-puppet/modules/apache_auth/test.pp
+else
+    # Set up apache config files (load mellon module, configure wsgi files)
+    cat > /etc/httpd/conf.d/auth_mellon.load << EOF
+LoadModule auth_mellon_module /usr/lib64/httpd/modules/mod_auth_mellon.so
+EOF
+
+    sed -i 's/<\/VirtualHost>//g' /etc/httpd/conf.d/10-keystone_wsgi_main.conf
+    cat >> /etc/httpd/conf.d/10-keystone_wsgi_main.conf << EOF
+  WSGIScriptAliasMatch ^(/v3/OS-FEDERATION/identity_providers/.*?/protocols/.*?/auth)$ /var/www/cgi-bin/keystone/main/$1
+
+  Include /etc/httpd/conf.d/keystone-ipsilon.conf
+</VirtualHost>
+EOF
+
+    sed -i 's/<\/VirtualHost>//g' /etc/httpd/conf.d/10-keystone_wsgi_admin.conf
+    cat >> /etc/httpd/conf.d/10-keystone_wsgi_admin.conf << EOF
+  WSGIScriptAliasMatch ^(/v3/OS-FEDERATION/identity_providers/.*?/protocols/.*?/auth)$ /var/www/cgi-bin/keystone/main/$1
+
+  Include /etc/httpd/conf.d/keystone-ipsilon.conf
+</VirtualHost>
+EOF
+
+    # Set up Keystone for OS-FEDERATION extension
+    openstack-config --set /etc/keystone/keystone.conf federation driver keystone.contrib.federation.backends.sql.Federation
+    openstack-config --set /etc/keystone/keystone.conf auth methods external,password,token,saml2
+    openstack-config --set /etc/keystone/keystone.conf auth saml2 keystone.auth.plugins.mapped.Mapped
+    openstack-config --set /etc/keystone/keystone.conf paste_deploy config_file /etc/keystone/keystone-paste.ini
+    cp /usr/share/keystone/keystone-dist-paste.ini /etc/keystone/keystone-paste.ini
+    chown keystone:keystone /etc/keystone/keystone-paste.ini
+
+    v3_pipeline=`openstack-config --get /etc/keystone/keystone-paste.ini pipeline:api_v3 pipeline`
+    if [[ "$v3_pipeline" !=  *'federation_extension'* ]] ; then
+        new_v3_pipeline=`echo $v3_pipeline | sed -e 's/service_v3/federation_extension service_v3/g'`
+        openstack-config --set /etc/keystone/keystone-paste.ini pipeline:api_v3 pipeline "$new_v3_pipeline"
+    fi
+
+    keystone-manage db_sync --extension federation
+fi
 
 if [ -n "$USE_WEBSSO" ] ; then
     openstack-config --set /etc/keystone/keystone.conf federation remote_id_attribute MELLON_IDP
@@ -199,14 +239,6 @@ WEBSSO_CHOICES = (
 WEBSSO_INITIAL_CHOICE = "saml2"
 EOF
 fi
-
-v3_pipeline=`openstack-config --get /etc/keystone/keystone-paste.ini pipeline:api_v3 pipeline`
-if [[ "$v3_pipeline" !=  *'federation_extension'* ]] ; then
-    new_v3_pipeline=`echo $v3_pipeline | sed -e 's/service_v3/federation_extension service_v3/g'`
-    openstack-config --set /etc/keystone/keystone-paste.ini pipeline:api_v3 pipeline "$new_v3_pipeline"
-fi
-
-keystone-manage db_sync --extension federation
 
 # get DOA patch
 doachange=20
@@ -361,7 +393,7 @@ test_federated_auth() {
     echo $url5
     curl -s -o $HOME/form.html $trace -w '\n' -D $hdrs -b $cookies -c $cookies --cacert /etc/ipa/ca.crt $url5 >> $log 2>&1
     postpath=`xmllint --html --xpath 'string(//@action)' $HOME/form.html`
-    posturl=`echo "$url5" | sed -e "s,/idp/login/krb/negotiate,$postpath,"`
+    posturl=`echo "$url5" | sed -e "s,/idp/login/gssapi/negotiate,$postpath,"`
     echo $posturl
     ip_trans_id=`xmllint --html --xpath 'string(//input[@name="ipsilon_transaction_id"]/@value)' $HOME/form.html`
     postdata="login_name=${login_name}&login_password=${login_password}&ipsilon_transaction_id=${ip_trans_id}"
@@ -410,7 +442,7 @@ test_websso_auth() {
     echo "$url5"
     curl -s -o form.html $trace -w '\n' -D $hdrs -b $cookies -c $cookies --cacert /etc/ipa/ca.crt "$url5" >> $log 2>&1
     postpath=`xmllint --html --xpath 'string(//@action)' form.html`
-    posturl=`echo "$url5" | sed -e "s,/idp/login/krb/negotiate,$postpath,"`
+    posturl=`echo "$url5" | sed -e "s,/idp/login/gssapi/negotiate,$postpath,"`
     echo $posturl
     ip_trans_id=`xmllint --html --xpath 'string(//input[@name="ipsilon_transaction_id"]/@value)' form.html`
     postdata="login_name=${login_name}&login_password=${login_password}&ipsilon_transaction_id=${ip_trans_id}"
