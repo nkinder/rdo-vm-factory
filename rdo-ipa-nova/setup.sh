@@ -18,7 +18,7 @@ factory_setup || echo error setting up vm-factory
 
 # Create our networks
 create_virt_network ./ipa.conf ./rdo.conf
-create_virt_private_network
+#create_virt_private_network
 
 # Set up IPA VM
 get_image ./ipa.conf

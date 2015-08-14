@@ -17,6 +17,9 @@ create_ipa_user() {
 # SELinux policy in RHEL/CentOS.
 setenforce 0
 
+# global network config
+. /mnt/global.conf
+
 # Source our IPA config for IPA settings
 . /mnt/ipa.conf
 
@@ -74,16 +77,18 @@ cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys
 
 # Set up our answerfile
 HOME=/root packstack --gen-answer-file=/root/answerfile.txt
-#USE_NOVA_NETWORK=1
 if [ -n "$USE_NOVA_NETWORK" ] ; then
     sed -i 's/CONFIG_NEUTRON_INSTALL=y/CONFIG_NEUTRON_INSTALL=n/g' /root/answerfile.txt
 else
     sed -i 's/CONFIG_NEUTRON_INSTALL=n/CONFIG_NEUTRON_INSTALL=y/g' /root/answerfile.txt
-#    sed -i 's/PROVISION_ALL_IN_ONE_OVS_BRIDGE=n/PROVISION_ALL_IN_ONE_OVS_BRIDGE=y/g' /root/answerfile.txt
-    sed -i 's,CONFIG_PROVISION_DEMO_FLOATRANGE=.*$,CONFIG_PROVISION_DEMO_FLOATRANGE=172.24.4.0/24,g' /root/answerfile.txt
-    sed -i 's/PROVISION_ALL_IN_ONE_OVS_BRIDGE=n/PROVISION_ALL_IN_ONE_OVS_BRIDGE=y/g' /root/answerfile.txt
-    sed -i 's/CONFIG_NEUTRON_OVS_TUNNELING=n/CONFIG_NEUTRON_OVS_TUNNELING=y/g' /root/answerfile.txt
-    sed -i 's/CONFIG_NEUTRON_OVS_TUNNEL_TYPES=.*$/CONFIG_NEUTRON_OVS_TUNNEL_TYPES=vxlan/g' /root/answerfile.txt
+    if [ -n "$USE_PROVIDER_NETWORK" ] ; then
+        sed -i 's,CONFIG_PROVISION_DEMO=y,CONFIG_PROVISION_DEMO=n,g' /root/answerfile.txt
+    else
+        sed -i "s,CONFIG_PROVISION_DEMO_FLOATRANGE=.*\$,CONFIG_PROVISION_DEMO_FLOATRANGE=${VM_EXT_NETWORK},g" /root/answerfile.txt
+        sed -i 's/PROVISION_ALL_IN_ONE_OVS_BRIDGE=n/PROVISION_ALL_IN_ONE_OVS_BRIDGE=y/g' /root/answerfile.txt
+        sed -i 's/CONFIG_NEUTRON_OVS_TUNNELING=n/CONFIG_NEUTRON_OVS_TUNNELING=y/g' /root/answerfile.txt
+        sed -i 's/CONFIG_NEUTRON_OVS_TUNNEL_TYPES=.*$/CONFIG_NEUTRON_OVS_TUNNEL_TYPES=vxlan/g' /root/answerfile.txt
+    fi
     # neutron doesn't like NetworkManager
     systemctl stop NetworkManager.service
     systemctl disable NetworkManager.service
@@ -93,5 +98,10 @@ sed -i 's/CONFIG_KEYSTONE_SERVICE_NAME=keystone/CONFIG_KEYSTONE_SERVICE_NAME=htt
 
 # Install RDO
 HOME=/root packstack --debug --answer-file=/root/answerfile.txt
+if [ -n "$USE_PROVIDER_NETWORK" ] ; then
+    . /root/keystonerc_admin
+    openstack project create demo --description "demo project" --enable
+    openstack user create demo --project demo --password "$RDO_PASSWORD" --email demo@$VM_DOMAIN --enable
+fi
 
 sh -x /mnt/nova-setup.sh
