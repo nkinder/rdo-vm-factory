@@ -24,7 +24,10 @@ set -o errexit
 
 # Install IPA
 ipa-server-install -r $IPA_REALM -n $VM_DOMAIN -p "$IPA_PASSWORD" -a "$IPA_PASSWORD" \
-    --no-ntp --hostname=$VM_FQDN --setup-dns --forwarder=$IPA_FWDR -U
+                   --no-ntp --hostname=$VM_FQDN --setup-dns --forwarder=$IPA_FWDR -U
+
+# make sure we are using IPA for DNS
+sed -i 's/^nameserver .*$/nameserver '"$VM_IP"'/' /etc/resolv.conf
 
 if [ -n "$USE_IPSILON" ] ; then
     # Enable EPEL for python-cherrypy and python-sqlalchemy
@@ -56,4 +59,13 @@ if [ -n "$USE_IPSILON" ] ; then
 
     # Restart httpd to start Ipsilon
     systemctl restart httpd.service
+fi
+
+if [ -n "$SETUP_HOSTGROUPS" ] ; then
+    echo "$IPA_PASSWORD" | kinit admin@$IPA_REALM
+    ipa hostgroup-add app_servers --desc "Application Servers Group"
+    ipa automember-add --type=hostgroup app_servers
+    ipa automember-add-condition --key=userclass --type=hostgroup \
+        --inclusive-regex=^app_server app_servers
+    kdestroy
 fi

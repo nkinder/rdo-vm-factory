@@ -17,13 +17,13 @@ factory_setup || echo error setting up vm-factory
 . ../global.conf
 
 # Create our networks
-create_virt_network ./ipa.conf ./rdo.conf
+create_virt_network ./ipa.conf ./openstack.conf
 #create_virt_private_network
 
 # Set up IPA VM
 get_image ./ipa.conf
 setupvm.sh ../global.conf ./ipa.conf
 
-# Set up RDO VM
-get_image ./rdo.conf
-setupvm.sh ../global.conf ./rdo.conf
+# Set up OpenStack VM
+get_image ./openstack.conf
+setupvm.sh ../global.conf ./openstack.conf

@@ -14,8 +14,8 @@ IPA_FQDN=$VM_FQDN
 IPA_IP=$VM_IP
 IPA_DOMAIN=$VM_DOMAIN
 
-# Source our config for RDO settings
-. $SOURCE_DIR/rdo.conf
+# Source our config for OpenStack settings
+. $SOURCE_DIR/openstack.conf
 
 # add python plugin code for ipa
 cp $SOURCE_DIR/novahooks.py /usr/lib/python2.7/site-packages/ipaclient
@@ -132,6 +132,12 @@ neutron router-gateway-set $ROUTER_ID $PUB_NET
 
 # route private network through public network
 ip route replace $VM_INT_NETWORK via $VM_EXT_ROUTE
+# make route persistent
+cat > /etc/sysconfig/network-scripts/route-br-ex <<EOF
+GATEWAY0=$VM_EXT_ROUTE
+NETMASK0=$VM_INT_NETMASK
+ADDRESS0=$VM_INT_NETADDR
+EOF
 
 #Add security group rules to enable ping and ssh:
 for secgrpid in $SEC_GRP_IDS ; do
@@ -171,7 +177,14 @@ if [ -z "$netid" ] ; then
     neutron subnet-list
     exit 1
 fi
-VM_UUID=$(openstack server create rhel7 --flavor m1.small --image rhel7 --security-group default --nic net-id=$netid | awk '/ id / {print $4}')
+
+if [ -n "$DEMO_SETUP" ] ; then
+    echo openstack server create rhel7 --flavor m1.small --image rhel7 --security-group default \
+         --nic net-id=$netid --property ipaclass=app_server
+    exit 0
+fi
+
+VM_UUID=$(openstack server create rhel7 --flavor m1.small --image rhel7 --security-group default --nic net-id=$netid --property ipaclass=app_server | awk '/ id / {print $4}')
 
 ii=$BOOT_TIMEOUT
 while [ $ii -gt 0 ] ; do

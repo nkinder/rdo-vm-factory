@@ -249,12 +249,9 @@ class IPABuildInstanceHook(IPANovaHookBase):
         LOG.debug('In IPABuildInstanceHook.pre: args [%s] kwargs [%s]',
                   pprint.pformat(args), pprint.pformat(kwargs))
         # args[8] is the NetworkRequestList of NetworkRequest objects
-        for nr in args[8].objects:
-            LOG.debug("nr = %s %s" % (pprint.pformat(nr.network_id), pprint.pformat(nr.address)))
         # args[7] is the injected_files parameter array
         # the value is ('filename', 'base64 encoded contents')
         args[7].extend(self.inject_files)
-        # args[3] is the Instance object
         inst = args[2]
         ipaotp = str(uuid.uuid4())
         inst.metadata['ipaotp'] = ipaotp
@@ -271,6 +268,8 @@ class IPABuildInstanceHook(IPANovaHookBase):
             'userpassword': ipaotp,
             'force': True # we don't have an ip addr yet - use force to add anyway
         }
+        if 'ipaclass' in inst.metadata:
+            args['userclass'] = inst.metadata['ipaclass']
         # # userpassword, random, usercertificate, macaddress
         # # ipasshpubkey, userclass, ipakrbrequirespreauth,
         # # ipakrbokasdelegate, force, no_reverse, ip_address
@@ -279,13 +278,13 @@ class IPABuildInstanceHook(IPANovaHookBase):
         self._call_and_handle_error(ipareq)
 
     def post(self, *args, **kwargs):
+        # in post, there is an additional args[0] not in pre which is the
+        # state of the instance - so shift everything else down one from pre
         LOG.debug('In IPABuildInstanceHook.post: args [%s] kwargs [%s]',
                   pprint.pformat(args), pprint.pformat(kwargs))
-        # in post, there is an additional args[0] not in pre which is the
-        # state of the instance - so shift everything else down one
-        # args[9] is the NetworkRequestList of NetworkRequest objects
-        for nr in args[9].objects:
-            LOG.debug("nr = %s %s" % (pprint.pformat(nr.network_id), pprint.pformat(nr.address)))
+        inst = args[3]
+        if 'ipaotp' in inst.metadata:
+            del inst.metadata['ipaotp']
 
 class IPADeleteInstanceHook(IPANovaHookBase):
 
