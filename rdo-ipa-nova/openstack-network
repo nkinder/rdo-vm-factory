@@ -1,0 +1,5 @@
+NOZEROCONF=yes
+NETWORKING=yes
+NISDOMAIN=local.test
+HOSTNAME=openstack.local.test
+GATEWAY=192.168.128.1

@@ -1,0 +1,5 @@
+NOZEROCONF=yes
+NETWORKING=yes
+NISDOMAIN=rdodom.test
+HOSTNAME=rdo.rdodom.test
+GATEWAY=192.168.128.1

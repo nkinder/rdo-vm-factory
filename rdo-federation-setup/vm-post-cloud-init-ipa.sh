@@ -12,6 +12,14 @@ setenforce 0
 # Set up entropy source for IPA installer
 rngd -r /dev/hwrng
 
+# I dunno - maybe something needs more time?
+sleep 60
+# getcert fails - certmonger not running?
+
+# turn off and permanently disable firewall
+systemctl stop firewalld.service
+systemctl disable firewalld.service
+
 # Install IPA
 ipa-server-install -r $IPA_REALM -n $VM_DOMAIN -p "$IPA_PASSWORD" -a "$IPA_PASSWORD" \
     -N --hostname=$VM_FQDN --setup-dns --forwarder=$IPA_FWDR -U
@@ -24,12 +32,16 @@ wget -O /etc/yum.repos.d/ipsilon.repo \
     https://copr.fedoraproject.org/coprs/nkinder/ipsilon/repo/epel-7/nkinder-ipsilon-epel-7.repo
 wget -O /etc/yum.repos.d/sssd.repo \
     https://copr.fedoraproject.org/coprs/nkinder/sssd/repo/epel-7/nkinder-sssd-epel-7.repo
+wget -O /etc/yum.repos.d/mod_auth_gssapi.repo \
+    https://copr.fedoraproject.org/coprs/simo/mod_auth_gssapi/repo/epel-7/simo-mod_auth_gssapi-epel-7.repo
 
-# Install Ipsilon
-yum install -y ipsilon ipsilon-tools ipsilon-tools-ipa ipsilon-saml2 \
-               ipsilon-authkrb ipsilon-authform ipsilon-infosssd
-ipsilon-server-install --ipa=yes --krb=yes --form=yes --info-sssd=yes \
+# Install Ipsilon from Copr
+wget -O /etc/yum.repos.d/nkinder-ipsilon-epel-7.repo \
+    https://copr.fedoraproject.org/coprs/nkinder/ipsilon/repo/epel-7/nkinder-ipsilon-epel-7.repo
+yum install -y ipsilon ipsilon-saml2 ipsilon-authform ipsilon-authgssapi ipsilon-infosssd ipsilon-tools-ipa
+ipsilon-server-install --ipa=yes --gssapi=yes --form=yes --info-sssd=yes \
                        --admin-user=admin
+
 
 # Ipsilon uses mod_ssl, but IPA uses mod_nss.  We need to switch
 # the directive to allow httpd to start properly.

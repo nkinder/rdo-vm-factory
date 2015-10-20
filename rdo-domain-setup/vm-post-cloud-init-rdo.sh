@@ -26,6 +26,10 @@ IPA_IP=$VM_IP
 # Use IPA for DNS discovery
 sed -i "s/^nameserver .*/nameserver $IPA_IP/g" /etc/resolv.conf
 
+# turn off and permanently disable firewall
+systemctl stop firewalld.service
+systemctl disable firewalld.service
+
 # Join IPA
 ipa-client-install -U -p admin@$IPA_REALM -w $IPA_PASSWORD
 
