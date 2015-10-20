@@ -3,7 +3,7 @@
 # get OTP
 ii=60
 while [ $ii -gt 0 ] ; do
-    otp=`curl -s http://169.254.169.254/openstack/latest/meta_data.json | python -c 'import json; import sys; obj = json.load(sys.stdin); print "%s\n" % obj["meta"]["ipaotp"]'`
+    otp=`cat /tmp/ipaotp`
     if [ -n "$otp" ] ; then
         break
     fi
@@ -16,5 +16,6 @@ if [ -z "$otp" ] ; then
     exit 1
 fi
 
+rm -f /tmp/ipaotp
 # run ipa-client-install
 ipa-client-install -U -w $otp

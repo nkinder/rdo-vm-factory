@@ -251,10 +251,12 @@ class IPABuildInstanceHook(IPANovaHookBase):
         # args[8] is the NetworkRequestList of NetworkRequest objects
         # args[7] is the injected_files parameter array
         # the value is ('filename', 'base64 encoded contents')
-        args[7].extend(self.inject_files)
-        inst = args[2]
         ipaotp = str(uuid.uuid4())
-        inst.metadata['ipaotp'] = ipaotp
+        ipainject = ('/tmp/ipaotp', base64.b64encode(ipaotp))
+        args[7].extend(self.inject_files)
+        args[7].append(ipainject)
+        inst = args[2]
+#        inst.metadata['ipaotp'] = ipaotp
         # call ipa host add to add the new host
         ipareq = {'method': 'host_add', 'id': 0}
         hostname = '%s.%s' % (inst.hostname, getvmdomainname())
@@ -282,9 +284,9 @@ class IPABuildInstanceHook(IPANovaHookBase):
         # state of the instance - so shift everything else down one from pre
         LOG.debug('In IPABuildInstanceHook.post: args [%s] kwargs [%s]',
                   pprint.pformat(args), pprint.pformat(kwargs))
-        inst = args[3]
-        if 'ipaotp' in inst.metadata:
-            del inst.metadata['ipaotp']
+        # inst = args[3]
+        # if 'ipaotp' in inst.metadata:
+        #     inst.delete_metadata_key('ipaotp')
 
 class IPADeleteInstanceHook(IPANovaHookBase):
 
